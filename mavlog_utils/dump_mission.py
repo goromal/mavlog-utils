@@ -30,6 +30,8 @@ def mission_cmd_str(wp):
         return f"LOITER UNLIM:\tLat={wp.x:.4f}\tLong={wp.y:.4f}\tAlt={wp.z:.4f}"
     elif wp.command == mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS:
         return f"LOITER TURNS:\tLat={wp.x:.4f}\tLong={wp.y:.4f}\tAlt={wp.z:.4f}"
+    elif wp.command == mavutil.mavlink.MAV_CMD_DO_JUMP:
+        return f"DO JUMP:\tSeqNum={wp.param1:.4f}\tRepeat={wp.param2}"
     else:
         return f"Unsupported command ID: {wp.command}"
 
