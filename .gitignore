@@ -1,0 +1,6 @@
+**.pyc
+*.log
+*.BIN
+nixcopy/*
+*.nix
+venv/*

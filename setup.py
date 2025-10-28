@@ -17,6 +17,7 @@ setup(
     ]},
     install_requires = [
         "pymavlink",
-        "progressbar2"
+        "progressbar2",
+        "numpy",
     ]
 )
