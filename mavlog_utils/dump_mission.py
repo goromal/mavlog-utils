@@ -10,6 +10,7 @@ helpstr = """
 mav-dump-mission LOGNAME.bin
 Dump mission waypoints from a mavlink .bin logfile.
 Detects and highlights mission uploads, especially those occurring in AUTO mode.
+Also shows SET_POSITION_TARGET_GLOBAL_INT commands for direct position control.
 """
 
 def frame_str(f):
@@ -98,8 +99,9 @@ def main():
     reader_pbar.finish()
     reader.rewind()
     
-    # Add MODE, HEARTBEAT, and MISSION_COUNT/ACK to tracked message types
-    types = set(["GPS", "CMD", "MISSION_ITEM_INT", "MISSION_ITEM", "MODE", "HEARTBEAT", "MISSION_COUNT", "MISSION_ACK"])
+    # Add POSITION_TARGET tracking and MODE tracking
+    types = set(["GPS", "CMD", "MISSION_ITEM_INT", "MISSION_ITEM", "MODE", "HEARTBEAT", 
+                "MISSION_COUNT", "MISSION_ACK", "SET_POSITION_TARGET_GLOBAL_INT"])
     timeus = []
     waypoints = []
     time_anchors = []
@@ -107,6 +109,7 @@ def main():
     # Track vehicle mode and mission uploads
     mode_changes = []
     mission_events = []
+    position_targets = []
     current_mode = "UNKNOWN"
     mission_upload_in_progress = False
     mission_items_expected = 0
@@ -168,6 +171,28 @@ def main():
             if mission_items_received == mission_items_expected:
                 mission_upload_in_progress = False
                 mission_events.append((t, "UPLOAD_COMPLETE", current_mode, mission_items_expected))
+        
+        # Track SET_POSITION_TARGET_GLOBAL_INT commands
+        elif m.get_type() == "SET_POSITION_TARGET_GLOBAL_INT":
+            # Extract the relevant fields
+            pos_target = {
+                "time_us": t,
+                "lat": m.lat_int * 1.0e-7,  # Convert from int to float degrees
+                "lon": m.lon_int * 1.0e-7,
+                "alt": m.alt,
+                "type_mask": m.type_mask,
+                "coordinate_frame": m.coordinate_frame,
+                "vx": m.vx,
+                "vy": m.vy, 
+                "vz": m.vz,
+                "afx": m.afx,
+                "afy": m.afy,
+                "afz": m.afz,
+                "yaw": m.yaw,
+                "yaw_rate": m.yaw_rate,
+                "mode": current_mode
+            }
+            position_targets.append(pos_target)
         
         # Process waypoint data
         if m.get_type() == "CMD":
@@ -246,6 +271,49 @@ def main():
             print(f"{dt}: Mission upload completed with {details} items while in {mode} mode")
         elif event_type == "UPLOAD_END":
             print(f"{dt}: Mission upload ended with status: {details} while in {mode} mode")
+    
+    # Print direct position target commands
+    print("\n=== POSITION TARGET COMMANDS ===")
+    if position_targets:
+        for pt in position_targets:
+            dt = timeus_to_dt([pt["time_us"]])[0]
+            
+            # Determine what type of command it is based on the bitmask
+            cmd_type = []
+            if not (pt["type_mask"] & 0x007):  # Position setpoint
+                cmd_type.append("POS")
+            if not (pt["type_mask"] & 0x038):  # Velocity setpoint
+                cmd_type.append("VEL")
+            if not (pt["type_mask"] & 0x1C0):  # Acceleration setpoint
+                cmd_type.append("ACC")
+            if not (pt["type_mask"] & 0x400):  # Yaw setpoint
+                cmd_type.append("YAW")
+            if not (pt["type_mask"] & 0x800):  # Yaw rate setpoint
+                cmd_type.append("YAWRATE")
+            
+            cmd_type_str = "+".join(cmd_type) if cmd_type else "UNKNOWN"
+            
+            # Format the output based on what's being commanded
+            output_parts = [f"({dt}) [{pt['mode']}] {cmd_type_str} TARGET:"]
+            
+            if not (pt["type_mask"] & 0x007):
+                output_parts.append(f"Lat={pt['lat']:.6f} Lon={pt['lon']:.6f} Alt={pt['alt']:.2f}")
+            
+            if not (pt["type_mask"] & 0x038):
+                output_parts.append(f"Vx={pt['vx']:.2f} Vy={pt['vy']:.2f} Vz={pt['vz']:.2f}")
+            
+            if not (pt["type_mask"] & 0x1C0):
+                output_parts.append(f"Ax={pt['afx']:.2f} Ay={pt['afy']:.2f} Az={pt['afz']:.2f}")
+            
+            if not (pt["type_mask"] & 0x400):
+                output_parts.append(f"Yaw={pt['yaw']:.2f}")
+                
+            if not (pt["type_mask"] & 0x800):
+                output_parts.append(f"YawRate={pt['yaw_rate']:.2f}")
+                
+            print(" ".join(output_parts))
+    else:
+        print("No position target commands found in log.")
     
     # Print waypoints with enhanced upload detection
     print("\n=== MISSION WAYPOINTS ===")
